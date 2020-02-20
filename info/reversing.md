@@ -81,4 +81,6 @@ So I have noticed that 2 values preceding `val32_one` are probably pointers. The
 
 ## Struct Size/Length
 
+Fortunately, it seems that the struct is bzero-ed or memset-ed to zero in a fair amount of plugins I have looked at. The size for zeroing always seems to be a 192 bytes for 64 bit plugins, and 144 bytes for 32 bit plugins.
+
 ![Struct Length](./images/zeroing-structs.png)
