@@ -40,11 +40,18 @@ void suspend_if_exists(const char* name) {
 }
 
 int main() {
+    printf("64 bit (y/n): ");
+    int c = getchar();
+    c = (c == 'y') || (c == 'Y');
+    printf("Searching for %d bit\n", 32 << c);
     NtSuspendProcess = (NtSuspendProcessPtr)GetProcAddress(GetModuleHandle("NTDLL"), "NtSuspendProcess");
     NtResumeProcess = (NtSuspendProcessPtr)GetProcAddress(GetModuleHandle("NTDLL"), "NtResumeProcess");
     for(;;) {
-        suspend_if_exists("RemoteVstPlugin.exe");
-        suspend_if_exists("RemoteVstPlugin32.exe");
+        if(c) {
+            suspend_if_exists("RemoteVstPlugin.exe");
+        } else {
+            suspend_if_exists("RemoteVstPlugin32.exe");
+        }
     }
     return 0;
 }
