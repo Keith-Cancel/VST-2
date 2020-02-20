@@ -1,5 +1,5 @@
 # Overview
-So looking for info on the VST 2. It looks like it's non-longer maintained by the original creator, and they are pushing VST 3. VST 2 also seems to have some pretty harsh licensing from a quick search about it. Also sounds like the creator is no long licensing the SDK. Just going to avoid this all together. So I am gonna try to figure out the structure for VST 2 and write a C and Rust interface for them. Also put my reverse engineering skills to work.
+So looking for info on the VST 2. It looks like it's non-longer maintained by the original creator, and they are pushing VST 3. VST 2 SDK also seems to have some odd/restrictive licensing from a quick search about it. Also sounds like the creator is no longer licensing the SDK. Just going to avoid this all together. So I am gonna try to figure out the structure for VST 2 and write a C and Rust interface for them. While I am aware there probably some open source projects I could check like LMMS. However, I also want to put my reverse engineering skills to work. So gonna do this completely blind. At least when I think I am done or completely stymied I can see what I missed by looking at such projects.
 
 # Findings and Process
 The below will be me documenting what I have figured out, and how.
@@ -22,7 +22,7 @@ However, the VST 2 entry point seems to take one argument, which is a call back 
 
 Well after a little more static analysis, it looks like the entry point returns a pointer, to what I think is a struct or array of some kind. However, still have not really been able to determine the arguments, or what the fields are to this struct. Probably going to need to load the plugins and see how the application and program interact.
 
-So I am gonna use LMMS to launch the VST plugins, it spawns a seperate process for each VST. (RemoteVstPlugin.exe and RemoteVstPlugin32.exe) So I need to attach my debugger to this process as soon as it starts. Luckily, I can create an entry in *HKEY_LOCAL_MACHINE\SOFTWARE\Microsoft\Windows NT\CurrentVersion\Image File Execution Options* to make this easy on windows, but...
+So I am gonna use LMMS to launch the VST plugins, it spawns a separate process for each VST. (RemoteVstPlugin.exe and RemoteVstPlugin32.exe) So I need to attach my debugger to this process as soon as it starts. Luckily, I can create an entry in *HKEY_LOCAL_MACHINE\SOFTWARE\Microsoft\Windows NT\CurrentVersion\Image File Execution Options* to make this easy on windows, but...
 
 Well doing that seems to lockup LMMS, and the *RemoteVstPlugin* executable will terminate itself after letting it run. So I have written a very simple program that blindly polls the processes and suspends one the VST Plugin processes. (See suspender.c in the tools folder) This gives me plenty of time to attach debugger and then resume the process, and it seems to work well enough yay! (やった!) This will be much more effective now that I can examine the DLLs under use.
 
@@ -40,7 +40,8 @@ So the host process does multiple things with the returned pointer. It checks th
 
 ## A 32 bit number
 
-So the structure returned by the plugin has what I assume is a 32 bit number, but the host application is trying to print each byte like it's a string. It's position is at *0x48* for 32 bit and *0x70* for 64 bit. This number also seems to change among plugins, even of similar type.
+So the structure returned by the plugin has what I assume is a 32 bit number, but the host application is trying to print each byte like it's a string. It's position is at *0x48* for 32 bit and *0x70* for 64 bit. This number also seems to change among plugins, even of similar type. It's purpose is unclear at the moment.
+
 ### Result on 64 bit
 ![number offset 0x70](./images/32-bit_number.png)
 
@@ -49,6 +50,6 @@ So the structure returned by the plugin has what I assume is a 32 bit number, bu
 
 ## A little math
 
-However, If I take `0x70-0x48` I get 40 bytes. This give me some other useful information. This number is divisible by 4 which makes me think it's the result of some struct members going from 4 to 8 bytes wide. It is enough for 10 values assuming perfect packing. This behavior makes me think the struct has a fair amount of pointers above this 32 bit number. Since 0x48 = 72 bytes that's enough room for 18 four byte values. The difference between 32 bit and 64 bit dlls is enough for only 10 expansions, but we could have 18 four bytes value this means there must be padding slop. If an 8 byte value comes after a 4 byte value we will get an additional 4 bytes of slop. Also the first 4 bytes are an identifier for a VST plugin.
+However, If I take `0x70-0x48` I get 40 bytes. This gives me some other useful information. This number is divisible by 4 which makes me think it's the result of some struct members going from 4 to 8 bytes wide. It is enough for 10 values assuming perfect packing. This behavior makes me think the struct has a fair amount of pointers above this 32 bit number. Since 0x48 = 72 bytes that's enough room for 18 four byte values. The difference between 32 bit and 64 bit dlls is enough for only 10 expansions, and this means there must be padding slop. If an 8 byte value comes after a 4 byte value we will get an additional 4 bytes of slop. Also the first 4 bytes are an identifier for a VST plugin ("PtsV").
 
-Assuming no 16 bit or single byte values we can get an equation to estimate how many numbers I would expect go from 4 to 8 bytes. We can get equation like this from that info `8 * X + 4 * Y + 4 * Z = 112`. Where X is the number values that expand from 4 to 8 bytes. Y is the number of times padding is needed. Z is the number 4 byte entries. We know X can't exceed 10, and Y can only be less than or equal to X. And the total value must equal 112. However we can eliminate a variable since for 32 bit we know `4 * X + 0 * Y + 4 * Z = 72`. This gives us two new equations `Y = 10 - X` and `Z = 18 - X`. Also because the constraint on Y we know X must greater than 4, and Z must be at least 1 since the 4 bytes for the identifer. This means there is only 5 to 10 values which expanded. These 5 to 10 values are probably pointers.
+Assuming no 16 bit or single byte values we can get an equation to estimate how many numbers I would expect to go from 4 to 8 bytes. We can get equation like this from that info `8 * X + 4 * Y + 4 * Z = 112`. Where X is the number values that expand from 4 to 8 bytes. Y is the number of times padding is needed. Z is the number 4 byte entries. We know X can't exceed 10, and Y can only be less than or equal to X. And the total value must equal 112. However we can eliminate a variable since for 32 bit we know `4 * X + 0 * Y + 4 * Z = 72`. This gives us two new equations `Y = 10 - X`, and `Z = 18 - X`. Also because the constraint on Y we know X must greater than 4. This means there is only 5 to 10 values which expanded. These 5 to 10 values are probably pointers.
