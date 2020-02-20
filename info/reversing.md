@@ -52,4 +52,16 @@ So the structure returned by the plugin has what I assume is a 32 bit number, bu
 
 However, If I take `0x70-0x48` I get 40 bytes. This gives me some other useful information. This number is divisible by 4 which makes me think it's the result of some struct members going from 4 to 8 bytes wide. It is enough for 10 values assuming perfect packing. This behavior makes me think the struct has a fair amount of pointers above this 32 bit number. Since 0x48 = 72 bytes that's enough room for 18 four byte values. The difference between 32 bit and 64 bit dlls is enough for only 10 expansions, and this means there must be padding slop. If an 8 byte value comes after a 4 byte value we will get an additional 4 bytes of slop. Also the first 4 bytes are an identifier for a VST plugin ("PtsV").
 
-Assuming no 16 bit or single byte values we can get an equation to estimate how many numbers I would expect to go from 4 to 8 bytes. We can get equation like this from that info `8 * X + 4 * Y + 4 * Z = 112`. Where X is the number values that expand from 4 to 8 bytes. Y is the number of times padding is needed. Z is the number 4 byte entries. We know X can't exceed 10, and Y can only be less than or equal to X. And the total value must equal 112. However we can eliminate a variable since for 32 bit we know `4 * X + 0 * Y + 4 * Z = 72`. This gives us two new equations `Y = 10 - X`, and `Z = 18 - X`. Also because the constraint on Y we know X must greater than 4. This means there is only 5 to 10 values which expanded. These 5 to 10 values are probably pointers.
+Assuming no 16 bit or single byte values we can get an equation to estimate how many numbers I would expect to go from 4 to 8 bytes. We can get equation like this from that info `8 * X + 4 * Y + 4 * Z = 112`. Where X is the number values that expand from 4 to 8 bytes. Y is the number of times padding is needed. Z is the number 4 byte entries. We know X can't exceed 10, and Y can only be less than or equal to X. And the total value must equal 112. However we can eliminate a variable since for 32 bit we know `4 * X + 0 * Y + 4 * Z = 72`. This gives us two new equations `Y = 10 - X`, and `Z = 18 - X`. Also because the constraint on Y we know X must be greater than 4. This means there is only 5 to 10 values which expanded. These 5 to 10 values are probably pointers.
+
+## Function Pointers
+
+So looking at more closely at the values in the struct there is definitely 4 function pointers after the value "PtsV". These values point to the text segment of the loaded DLL. Also when jumping to the locations to memory they have a very apparent function prologue and epilogue when disassembled. Moreover, the math I did above says there must at least 1 more pointer or value that expands to 8 bytes. However, these 4 pointers are positioned in such a manner that it only adds one to the Y value. This means at most there can only be 9 values that expand to 8 bytes.
+
+I also found a couple function points shortly after the 32 bit number I identified earlier. Not 100% sure if they are port the struct yet though as I still have yet to determine how many bytes long or the struct's ends.
+
+### Struct Pointers
+![Function Pointers](./images/funct-ptrs.png)
+
+### Where the pointer right after "PtsV" points
+![Function Pointers](./images/funct-1.png)
