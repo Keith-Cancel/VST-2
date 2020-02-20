@@ -40,7 +40,7 @@ So the host process does multiple things with the returned pointer. It checks th
 
 ## A 32 bit number
 
-So the structure returned by the plugin has what I assume is a 32 bit number, but the host application is trying to print each byte like it's a string. It's position is at *0x48* for 32 bit and *0x70* for 64 bit. This number also seems to change among plugins, even of similar type. It's purpose is unclear at the moment.
+So the structure returned by the plugin has what I assume is a 32 bit number, but the host application is trying to print each byte like it's a string. It's position is at *0x48* for 32 bit and *0x70* for 64 bit. This number also seems to change among plugins, even of similar type. It's purpose is unclear at the moment. Lets just call it `val32_one` for now.
 
 ### Result on 64 bit
 ![number offset 0x70](./images/32-bit_number.png)
@@ -58,10 +58,27 @@ Assuming no 16 bit or single byte values we can get an equation to estimate how 
 
 So looking at more closely at the values in the struct there is definitely 4 function pointers after the value "PtsV". These values point to the text segment of the loaded DLL. Also when jumping to the locations to memory they have a very apparent function prologue and epilogue when disassembled. Moreover, the math I did above says there must at least 1 more pointer or value that expands to 8 bytes. However, these 4 pointers are positioned in such a manner that it only adds one to the Y value. This means at most there can only be 9 values that expand to 8 bytes.
 
-I also found a couple function points shortly after the 32 bit number I identified earlier. Not 100% sure if they are port the struct yet though as I still have yet to determine how many bytes long or the struct's ends.
+I also found a couple function pointers shortly after the `val32_one` I identified earlier. Not 100% sure if they are part the struct yet though as I still have yet to determine how many bytes long or the struct's ends.
 
 ### Struct Pointers
 ![Function Pointers](./images/funct-ptrs.png)
 
 ### Where the pointer right after "PtsV" points
 ![Function Pointers](./images/funct-1.png)
+
+## More Numbers
+
+So it looks likes we have 5 32 bit values following those 4 function pointers. They also appear to be set in 32 bit dlls. So it seems to be a pretty safe guess. What is more challenging is the bytes following these are zero in the DLLS I am testing.
+
+### More 32 bit values
+![Numbers](./images/32-bit_numbers.png)
+
+## New Pointers and Possible struct
+
+So I have noticed that 2 values preceding `val32_one` are probably pointers. The first one which I circled in orange this time seems to point always a little before this struct. It might be an other struct. However, it seems to vary how far it points ahead even among same bit dlls. The value following this pointer also seems to expand from 4 to 8 bytes when comparing 32 bit and 64 bit dlls. Additionally, it seems to always be zeroed. Lastly, the value circled in purple seems to be `0x00 0x00 0x80 0x3f` in the dlls I have examined so far. This value equals one as a float, but it might not be a float. Hopefully, I can find a DLL that uses a different value here. That would let me know for certain if it's a float or an integer.
+
+![More Pointers](./images/more_ptrs.png)
+
+## Struct Size/Length
+
+![Struct Length](./images/zeroing-structs.png)
