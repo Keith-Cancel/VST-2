@@ -28,7 +28,7 @@ Well doing that seems to lockup LMMS, and the *RemoteVstPlugin* executable will 
 
 ![Debugger Success](./images/debugger.png)
 
-# Return Type Struct Pointer or String Pointer?
+## Return Type Struct Pointer or String Pointer?
 
 So the returned pointer is in the data segment of this dll. However, I thought it was a struct when looking around with snowman although it looks to be just the string "PtsV". Also seems be the same in other dlls. Maybe *VSTPluginMain* does not return anything that interesting, unless the data following afterwards is used by the calling process. If it's just a string I am I probably done here.
 
@@ -37,3 +37,18 @@ So the returned pointer is in the data segment of this dll. However, I thought i
 So the host process does multiple things with the returned pointer. It checks that DLL does not return *NULL*. Then it checks to see if the pointer points to a value equal to "PtsV". If it does not equal "PtsV" it does not consider the DLL a VST plugin. This value seems to be used so one can indentify a VST plugin. However, it looks like the pointer is accessed at different offset when looking at assembly code ahead. So clearly it's some kinda of structure that begins with a string.
 
 ![A struct with a string](./images/string2.png)
+
+## A 32 bit number
+
+So the structure returned by the plugin has what I assume is a 32 bit number, but the host application is trying to print each byte like it's a string. It's posistion is at *0x48* for 32 bit and *0x70* for 64 bit. This number also seems to change among plugins, even of similar type.
+### Result on 64 bit
+![number offset 0x70](./images/32-bit_number.png)
+
+### Result on 32 bit
+![number offset 0x48](./images/32-bit_number2.png)
+
+## A little math
+
+However, If I take `0x70-0x48` I get 40 bytes. This give me some other useful information. This number is divisable by 4 which makes me think it's the result of some struct members going from 4 to 8 bytes wide. It is enough for 10 values assuming perfect packing. This behavior makes me think the struct has a fair amount of pointers above this 32 bit number. Since 0x48 = 72 bytes that's enough room for 18 four byte values. The differnce between 32 bit and 64 bit dlls is enough for only 10 expansions, but we could have 18 four bytes value this means there must be padding slop. If an 8 byte value comes after a 4 byte value we will get an addtional 4 bytes of slop. Also the first 4 bytes are an indentifier for a VST plugin.
+
+Assuming no 16 bit or single byte values we can get an equation to eastimate how many numbers I would expect go from 4 to 8 bytes. We can get equation like this from that info `8 * X + 4 * Y + 4 * Z = 112`. X is the number values that expand from 4 to 8 bytes. Y is the number of times padding is needed. Z is the number 4 byte entries. We know X can't exceed 10, and Y can only be less than or equal to X. And the total value must equal 112. However we can eleminate a variable since for 32 bit we know `4 * X + 0 * Y + 4 * Z = 72`. This gives us two new equestions `Y = 10 - X` and `Z = 18 - X`. Also because the constraint on Y we know X must greater than 4, and Z must be at least 1 since the 4 bytes for the identfier. This means there is only 5 to 10 values which expanded. These 5 to 10 values are probably pointers.
