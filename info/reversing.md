@@ -10,7 +10,7 @@ DLLS Seem to export 2 functions *main*, and *VSTPluginMain*. The fact it so few 
 ![VST 2 Functions](./images/funcs.png)
 
 ## Function Signatures
-So looking at the assembly of 64 bit vs. 32 bit dlls the return values differ. On windows a plain int is 32 bits. So it's not returning an int on 64 bit. It's either a large number or a pointer. I am going to probably guess returning a pointer, as it would make no sense to change the width between 32bit and 64bit. The 64 bit dlls so far I have looked at only take a single pointer as an argument, but 32 bit dlls are not remaining constant. At least when looking at decompiled code from snowman. Different argument numbers would not make sense for a dll entry point. So I need to look more closely at the assembly, and the call stack.
+So looking at the assembly of 64 bit vs. 32 bit dlls the return values differ. On windows a plain int is 32 bits. So it's not returning an int on 64 bit. It's either a large number or a pointer. I am going to probably guess returning a pointer, as it would make no sense to change the width between 32bit and 64bit. The 64 bit dlls so far I have looked at only take a single pointer as an argument, but 32 bit dlls are not remaining constant. At least when looking at de-compiled code from snowman. Different argument numbers would not make sense for a dll entry point. So I need to look more closely at the assembly, and the call stack.
 
 ![VST 2 Main](./images/funcs2.png)
 
@@ -22,25 +22,25 @@ However, the VST 2 entry point seems to take one argument, which is a call back 
 
 Well after a little more static analysis, it looks like the entry point returns a pointer, to what I think is a struct or array of some kind. However, still have not really been able to determine the arguments, or what the fields are to this struct. Probably going to need to load the plugins and see how the application and program interact.
 
-So I am gonna use LMMS to launch the VST plugins, it spawns a seperate process for each VST. (RemoteVstPlugin.exe and RemoteVstPlugin32.exe) So I need to attach my debugger to this process as soon as it starts. Luckily, I can create a *HKEY_LOCAL_MACHINE\SOFTWARE\Microsoft\Windows NT\CurrentVersion\Image File Execution Options* to make this easy on windows, but...
+So I am gonna use LMMS to launch the VST plugins, it spawns a seperate process for each VST. (RemoteVstPlugin.exe and RemoteVstPlugin32.exe) So I need to attach my debugger to this process as soon as it starts. Luckily, I can create an entry in *HKEY_LOCAL_MACHINE\SOFTWARE\Microsoft\Windows NT\CurrentVersion\Image File Execution Options* to make this easy on windows, but...
 
-Well doing that seems to lockup LMMS, and the *RemoteVstPlugin* executable will terminate itself after letting run. So I have written a very simple program that blindly polls the processes and suspends one the VST Plugin processes. (See suspender.c in the tools folder) This gives me plenty of time to attach debugger and then resume the process, and it seems to work well enough yay! (やった!) This will be much more effective now that I can examine the DLLs under use.
+Well doing that seems to lockup LMMS, and the *RemoteVstPlugin* executable will terminate itself after letting it run. So I have written a very simple program that blindly polls the processes and suspends one the VST Plugin processes. (See suspender.c in the tools folder) This gives me plenty of time to attach debugger and then resume the process, and it seems to work well enough yay! (やった!) This will be much more effective now that I can examine the DLLs under use.
 
 ![Debugger Success](./images/debugger.png)
 
 ## Return Type Struct Pointer or String Pointer?
 
-So the returned pointer is in the data segment of this dll. However, I thought it was a struct when looking around with snowman although it looks to be just the string "PtsV". Also seems be the same in other dlls. Maybe *VSTPluginMain* does not return anything that interesting, unless the data following afterwards is used by the calling process. If it's just a string I am I probably done here.
+So the returned pointer is in the data segment of this dll. However, I thought it was a struct when looking around with snowman although it looks to be just the string "PtsV". The value seems be the same in other dlls. Maybe *VSTPluginMain* does not return anything that interesting, unless the data following "PtsV" afterwards is used by the calling process. If it's just a string I am I probably done here.
 
 ![just a string?](./images/string.png)
 
-So the host process does multiple things with the returned pointer. It checks that DLL does not return *NULL*. Then it checks to see if the pointer points to a value equal to "PtsV". If it does not equal "PtsV" it does not consider the DLL a VST plugin. This value seems to be used so one can indentify a VST plugin. However, it looks like the pointer is accessed at different offset when looking at assembly code ahead. So clearly it's some kinda of structure that begins with a string.
+So the host process does multiple things with the returned pointer. It checks that DLL does not return *NULL*. Then it checks to see if the pointer points to a value equal to "PtsV". If it does not equal "PtsV" it does not consider the DLL a VST plugin. This value seems to be used so one can identify a VST plugin. However, the pointer is accessed with additional  different offset when looking at assembly code ahead. So clearly it's some kinda of structure that begins with a string.
 
 ![A struct with a string](./images/string2.png)
 
 ## A 32 bit number
 
-So the structure returned by the plugin has what I assume is a 32 bit number, but the host application is trying to print each byte like it's a string. It's posistion is at *0x48* for 32 bit and *0x70* for 64 bit. This number also seems to change among plugins, even of similar type.
+So the structure returned by the plugin has what I assume is a 32 bit number, but the host application is trying to print each byte like it's a string. It's position is at *0x48* for 32 bit and *0x70* for 64 bit. This number also seems to change among plugins, even of similar type.
 ### Result on 64 bit
 ![number offset 0x70](./images/32-bit_number.png)
 
@@ -49,6 +49,6 @@ So the structure returned by the plugin has what I assume is a 32 bit number, bu
 
 ## A little math
 
-However, If I take `0x70-0x48` I get 40 bytes. This give me some other useful information. This number is divisable by 4 which makes me think it's the result of some struct members going from 4 to 8 bytes wide. It is enough for 10 values assuming perfect packing. This behavior makes me think the struct has a fair amount of pointers above this 32 bit number. Since 0x48 = 72 bytes that's enough room for 18 four byte values. The differnce between 32 bit and 64 bit dlls is enough for only 10 expansions, but we could have 18 four bytes value this means there must be padding slop. If an 8 byte value comes after a 4 byte value we will get an addtional 4 bytes of slop. Also the first 4 bytes are an indentifier for a VST plugin.
+However, If I take `0x70-0x48` I get 40 bytes. This give me some other useful information. This number is divisible by 4 which makes me think it's the result of some struct members going from 4 to 8 bytes wide. It is enough for 10 values assuming perfect packing. This behavior makes me think the struct has a fair amount of pointers above this 32 bit number. Since 0x48 = 72 bytes that's enough room for 18 four byte values. The difference between 32 bit and 64 bit dlls is enough for only 10 expansions, but we could have 18 four bytes value this means there must be padding slop. If an 8 byte value comes after a 4 byte value we will get an additional 4 bytes of slop. Also the first 4 bytes are an identifier for a VST plugin.
 
-Assuming no 16 bit or single byte values we can get an equation to eastimate how many numbers I would expect go from 4 to 8 bytes. We can get equation like this from that info `8 * X + 4 * Y + 4 * Z = 112`. X is the number values that expand from 4 to 8 bytes. Y is the number of times padding is needed. Z is the number 4 byte entries. We know X can't exceed 10, and Y can only be less than or equal to X. And the total value must equal 112. However we can eleminate a variable since for 32 bit we know `4 * X + 0 * Y + 4 * Z = 72`. This gives us two new equestions `Y = 10 - X` and `Z = 18 - X`. Also because the constraint on Y we know X must greater than 4, and Z must be at least 1 since the 4 bytes for the identfier. This means there is only 5 to 10 values which expanded. These 5 to 10 values are probably pointers.
+Assuming no 16 bit or single byte values we can get an equation to estimate how many numbers I would expect go from 4 to 8 bytes. We can get equation like this from that info `8 * X + 4 * Y + 4 * Z = 112`. Where X is the number values that expand from 4 to 8 bytes. Y is the number of times padding is needed. Z is the number 4 byte entries. We know X can't exceed 10, and Y can only be less than or equal to X. And the total value must equal 112. However we can eliminate a variable since for 32 bit we know `4 * X + 0 * Y + 4 * Z = 72`. This gives us two new equations `Y = 10 - X` and `Z = 18 - X`. Also because the constraint on Y we know X must greater than 4, and Z must be at least 1 since the 4 bytes for the identifer. This means there is only 5 to 10 values which expanded. These 5 to 10 values are probably pointers.
