@@ -42,6 +42,7 @@ void suspend_if_exists(const char* name) {
 int main() {
     printf("64 bit (y/n): ");
     int c = getchar();
+    while(getchar() != '\n');
     c = (c == 'y') || (c == 'Y');
     printf("Searching for %d bit\n", 32 << c);
     NtSuspendProcess = (NtSuspendProcessPtr)GetProcAddress(GetModuleHandle("NTDLL"), "NtSuspendProcess");
