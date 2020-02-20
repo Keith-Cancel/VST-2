@@ -24,12 +24,16 @@ Well after a little more static analysis, it looks like the entry point returns 
 
 So I am gonna use LMMS to launch the VST plugins, it spawns a seperate process for each VST. (RemoteVstPlugin.exe and RemoteVstPlugin32.exe) So I need to attach my debugger to this process as soon as it starts. Luckily, I can create a *HKEY_LOCAL_MACHINE\SOFTWARE\Microsoft\Windows NT\CurrentVersion\Image File Execution Options* to make this easy on windows, but...
 
-Well doing that seems to lockup LMMS, and the *RemoteVstPlugin* executable will terminate itself after letting runing. So I have written a very simple program that blindly polls the processes and suspends one the VST Plugin processes. This gives me plenty of time to attach debugger and then resume the process, and it seems to work well enough yay! (やった!) This will be much more effective now that I can examine the DLLs under use.
+Well doing that seems to lockup LMMS, and the *RemoteVstPlugin* executable will terminate itself after letting run. So I have written a very simple program that blindly polls the processes and suspends one the VST Plugin processes. (See suspender.c in the tools folder) This gives me plenty of time to attach debugger and then resume the process, and it seems to work well enough yay! (やった!) This will be much more effective now that I can examine the DLLs under use.
 
 ![Debugger Success](./images/debugger.png)
 
 # Return Type Struct Pointer or String Pointer?
 
-So the returned pointer is in the data segment of this dll. However, I thought it was a struct when looking around with snowman although it looks to be just string the "PtsV". Also seems be the same in other dlls. Maybe *VSTPluginMain* does not return anything that interesting, unless the data following afterwards is used by the calling the calling process. If it's just a string I am I probably done here.
+So the returned pointer is in the data segment of this dll. However, I thought it was a struct when looking around with snowman although it looks to be just the string "PtsV". Also seems be the same in other dlls. Maybe *VSTPluginMain* does not return anything that interesting, unless the data following afterwards is used by the calling the calling process. If it's just a string I am I probably done here.
 
 ![just a string?](./images/string.png)
+
+So the host process does multiple things with the returned pointer. It checks that DLL does not return *NULL*. Then it checks to see if the pointer points to a value equal to "PtsV". If it does not equal "PtsV" it does not consider the DLL a VST plugin. This value seems to be used so one can indentify a VST plugin. However, it looks like the pointer is accessed at different offset when looking at assembly code ahead. So clear it's some kinda of structure that begins with a string.
+
+![A struct with a string](./images/string2.png)
