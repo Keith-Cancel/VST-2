@@ -30,10 +30,10 @@ Well doing that seems to lockup LMMS, and the *RemoteVstPlugin* executable will 
 
 # Return Type Struct Pointer or String Pointer?
 
-So the returned pointer is in the data segment of this dll. However, I thought it was a struct when looking around with snowman although it looks to be just the string "PtsV". Also seems be the same in other dlls. Maybe *VSTPluginMain* does not return anything that interesting, unless the data following afterwards is used by the calling the calling process. If it's just a string I am I probably done here.
+So the returned pointer is in the data segment of this dll. However, I thought it was a struct when looking around with snowman although it looks to be just the string "PtsV". Also seems be the same in other dlls. Maybe *VSTPluginMain* does not return anything that interesting, unless the data following afterwards is used by the calling process. If it's just a string I am I probably done here.
 
 ![just a string?](./images/string.png)
 
-So the host process does multiple things with the returned pointer. It checks that DLL does not return *NULL*. Then it checks to see if the pointer points to a value equal to "PtsV". If it does not equal "PtsV" it does not consider the DLL a VST plugin. This value seems to be used so one can indentify a VST plugin. However, it looks like the pointer is accessed at different offset when looking at assembly code ahead. So clear it's some kinda of structure that begins with a string.
+So the host process does multiple things with the returned pointer. It checks that DLL does not return *NULL*. Then it checks to see if the pointer points to a value equal to "PtsV". If it does not equal "PtsV" it does not consider the DLL a VST plugin. This value seems to be used so one can indentify a VST plugin. However, it looks like the pointer is accessed at different offset when looking at assembly code ahead. So clearly it's some kinda of structure that begins with a string.
 
 ![A struct with a string](./images/string2.png)
