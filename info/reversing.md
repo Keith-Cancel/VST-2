@@ -121,7 +121,7 @@ The most annoying gap would be between *0x64-0x8C*. This gap is 36 bytes large o
 
 ### Finally!
 
-So while trying to figure out that sizes in the gap, I finally found a plugin (*DynamicAudioNormalizer*) that sets an other value in that range. I guess that is the advantage with a widely used interface a lot more corner cases will be used. The value at 0x80 appears to be a 4 byte value (0x000A6e1e), and is used both in 32 and 64 bit. What is more important though is the area I circled in blue stays the same between both 64 bit and 32 bit. This tells me that is only 2 values that probably are pointers in this gap. It also tells me that there are two more 4-byte before the float. It also means that area circled in pink on 64 bit is padding, and not a value.
+So while trying to figure out that sizes in the gap, I finally found a plugin (*DynamicAudioNormalizer*) that sets an other value in that range. I guess that is the advantage with a widely used interface a lot more corner cases will be used. The value at 0x80 appears to be a 4 byte value (0x000A6e1e), and is used both in 32 and 64 bit. What is more important though is the area I circled in blue stays the same between both 64 bit and 32 bit. First, this tells me there are only 2 values that probably are pointers in this gap. Secondly, It tells me that there are two more 4-byte values before the float. It also means that area circled in pink for 64 bit plugins is padding, and not a value.
 
 ![break through](./images/break-through.png)
 
@@ -131,7 +131,7 @@ So when you have a 64 bit plugin the struct is 192 bytes long. I have been able 
 
 ## The Final Struct layout
 
-Thus we have the finally enough information to make a preliminary struct layout. This probably is the layout unless shorts or bytes are used in which case there may be more padding. However, so far I have only seen dword and qword load and stores. The only exception so far is `val32_one` when LMMS is sprintf-ing it. Next I need to identify what each field does, and arguments and expected behavior of all function pointers we have discovered thus far.
+Thus we have the finally enough information to make a preliminary struct layout. This probably is the layout unless shorts or bytes are used in which case there may be more padding. However, so far I have only seen dword and qword loads and stores. The only exception so far is `val32_one` when LMMS is sprintf-ing it. Next I need to identify what each field does, and arguments and expected behavior of all function pointers we have discovered thus far.
 
 ```C
 #include <stdint.h>
