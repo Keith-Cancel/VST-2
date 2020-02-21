@@ -30,7 +30,7 @@ Well doing that seems to lockup LMMS, and the *RemoteVstPlugin* executable will 
 
 ## Return Type Struct Pointer or String Pointer?
 
-So the returned pointer is in the data segment of this dll. However, I thought it was a struct when looking around with snowman although it looks to be just the string "PtsV". The value seems be the same in other dlls. Maybe *VSTPluginMain* does not return anything that interesting, unless the data following "PtsV" afterwards is used by the calling process. If it's just a string I am I probably done here.
+So the returned pointer is in the data segment of this dll. Moreover, I thought it was a struct when looking around with snowman although it looks to be just the string "PtsV". The value seems be the same in other dlls. Maybe *VSTPluginMain* does not return anything that interesting, unless the data following "PtsV" afterwards is used by the calling process. If it's just a string I am I probably done here.
 
 ![just a string?](./images/string.png)
 
@@ -115,4 +115,52 @@ So pointer in the 64 bit dll starts ahead our struct so "PtsV" starts at offset 
 
 Firstly, it's obvious there is padding between *0x30-0x38*. Offsets *0x8C-0x90* might appear to have padding between them at first glance. However, we can see that from the 32 bit assembly also skip 4 bytes. This is indicative of an other 4 byte field in the struct. We have an 8 byte gap between the struct* and `val32_one`. When looking at the 32 bit offsets in the assembly above it's only 4 bytes. So it's probably a pointer left NULL on initialization.
 
-The most annoying gap would be between *0x64-0x8C*. This gap is 36 bytes large on 64 bit DLLs, and only 24 bytes on 32 bit DLLs. This is a 12 byte difference which can mean only two things. First there are 3 values that expand with no padding/slop or 2 values that expand and one group of padding bytes. Even the equations derived above are not a help as Y = 1, and Y = 2 are both allowed with the information I have thus far.
+The most annoying gap would be between *0x64-0x8C*. This gap is 36 bytes large on 64 bit DLLs, and only 24 bytes on 32 bit DLLs. This is a 12 byte difference which can mean only two things. First there are 3 values that expand with no padding/slop or 2 values that expand and one group of padding bytes. Even the equations derived above are not a help as Y = 1, and Y = 2 are both allowed with the information I have thus far. However, it looks 0x68 is set outside the initialization procedure I found, and is checked by LMMS when loading something it calls an editor from the near by strings. It's a dword so a 4 byte value. However, the next space after it would be at 0x6c and this is not 8 byte aligned so it must either be padding or an other 4 byte value
+
+![Offset 0x68](./images/offset-0x68.png)
+
+### Finally!
+
+So while trying to figure out that sizes in the gap, I finally found a plugin (*DynamicAudioNormalizer*) that sets an other value in that range. I guess that is the advantage with a widely used interface a lot more corner cases will be used. The value at 0x80 appears to be a 4 byte value (0x000A6e1e), and is used both in 32 and 64 bit. What is more important though is the area I circled in blue stays the same between both 64 bit and 32 bit. This tells me that is only 2 values that probably are pointers in this gap. It also tells me that there are two more 4-byte before the float. It also means that area circled in pink on 64 bit is padding, and not a value.
+
+![break through](./images/break-through.png)
+
+### The Reaming Bytes
+
+So when you have a 64 bit plugin the struct is 192 bytes long. I have been able to figure out layout of a 136 bytes. This leaves 56 bytes that I can't seem to find used by anything. When it comes to 32 bit plugins they are 144 bytes long, I have figured out 88 bytes. This also leaves 56 bytes. So it seems to be a safe bet these trailing bytes do not change in size.
+
+## The Final Struct layout
+
+Thus we have the finally enough information to make a preliminary struct layout. This probably is the layout unless shorts or bytes are used in which case there may be more padding. However, so far I have only seen dword and qword load and stores. The only exception so far is `val32_one` when LMMS is sprintf-ing it. Next I need to identify what each field does, and arguments and expected behavior of all function pointers we have discovered thus far.
+
+```C
+#include <stdint.h>
+
+// Our preliminary Struct layout
+
+struct vst_return_struct {
+    uint8_t check_bytes[4];
+    void* func0;
+    void* func1;
+    void* func2;
+    void* func3;
+    uint32_t val_0;
+    uint32_t val_1;
+    uint32_t val_2;
+    uint32_t val_3;
+    uint32_t val_5;
+    void* something_0; // Could also be size_t or uintptr_t
+    void* something_1; // Could also be size_t or uintptr_t
+    uint32_t val_6;
+    uint32_t val_7;
+    uint32_t val_8;
+    float float_0;
+    void* struct_0;
+    void* something_2; // Could also be size_t or uintptr_t
+    uint32_t val_9;
+    uint32_t val_A;
+    void* func4;
+    void* func5;
+    uint8_t unknown[56];
+};
+```
