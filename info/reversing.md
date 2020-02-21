@@ -81,6 +81,38 @@ So I have noticed that 2 values preceding `val32_one` are probably pointers. The
 
 ## Struct Size/Length
 
-Fortunately, it seems that the struct is bzero-ed or memset-ed to zero in a fair amount of plugins I have looked at. The size for zeroing always seems to be a 192 bytes for 64 bit plugins, and 144 bytes for 32 bit plugins.
+Fortunately, it seems that the struct is bzero-ed or memset-ed to zero in a fair amount of plugins I have looked at. The size for zeroing always seems to be a 192 bytes for 64 bit plugins, and 144 bytes for 32 bit plugins. Interestingly, the difference here is only 48 bytes between the two. We know that the leading part changed by 40 bytes, so that means the lower part expands only by 8 bytes. Moreover, I have already identified two function pointers after the value that LMMS was sprintf-ing (`val32_one`). So it would seem there are no other members in the struct in the lower half that change in size between 64 bit and 32 bit DLLs.
 
 ![Struct Length](./images/zeroing-structs.png)
+
+## Struct Initialization
+
+However, despite what we can infer from size changes the initialization gives the most information about the struct's layout. It can help us not just how many 4 vs 8 byte elements are in the struct but order which we have figured out a fair amount so far, but this helps pin down a lot. Also it seems like the majority of the pointers are functions.
+
+![Struct Initialization](./images/struct-init.png)
+
+So pointer in the 64 bit dll starts ahead our struct so "PtsV" starts at offset 0x30. So lets take offset and width in assembly and order them by the offsets in a table with this table can use it to help find padding, and infer any missing values. Combined with the how the offsets follow a nice 4 byte spacing in 32 bit dlls this makes my job easier.
+
+| Offset | Width |  Type  | Comment   |
+| ------ | ----- | ------ | --------- |
+| 0x30   | 4     | CONST  | "PtsV"    |
+| 0x38   | 8     | func*  ||
+| 0x40   | 8     | func*  ||
+| 0x48   | 8     | func*  ||
+| 0x50   | 8     | func*  ||
+| 0x58   | 4     | int    ||
+| 0x5C   | 4     | int    ||
+| 0x60   | 4     | int    ||
+| 0x64   | 4     | int    ||
+| 0x8C   | 4     | float  ||
+| 0x90   | 8     | struct*||
+| 0xA0   | 4     | int    | `val32_one` |
+| 0xA4   | 4     | int    |
+| 0xA8   | 8     | func*  |
+| 0xB0   | 8     | func*  |
+
+### Accounting for gaps
+
+Firstly, it's obvious there is padding between *0x30-0x38*. Offsets *0x8C-0x90* might appear to have padding between them at first glance. However, we can see that from the 32 bit assembly also skip 4 bytes. This is indicative of an other 4 byte field in the struct. We have an 8 byte gap between the struct* and `val32_one`. When looking at the 32 bit offsets in the assembly above it's only 4 bytes. So it's probably a pointer left NULL on initialization.
+
+The most annoying gap would be between *0x64-0x8C*. This gap is 36 bytes large on 64 bit DLLs, and only 24 bytes on 32 bit DLLs. This is a 12 byte difference which can mean only two things. First there are 3 values that expand with no padding/slop or 2 values that expand and one group of padding bytes. Even the equations derived above are not a help as Y = 1, and Y = 2 are both allowed with the information I have thus far.
