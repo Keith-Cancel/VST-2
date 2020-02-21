@@ -48,11 +48,13 @@ So the structure returned by the plugin has what I assume is a 32 bit number, bu
 ### Result on 32 bit
 ![number offset 0x48](./images/32-bit_number2.png)
 
-## A little math
+## A little math (You May Skip reading this)
 
-However, If I take `0x70-0x48` I get 40 bytes. This gives me some other useful information. This number is divisible by 4 which makes me think it's the result of some struct members going from 4 to 8 bytes wide. It is enough for 10 values assuming perfect packing. This behavior makes me think the struct has a fair amount of pointers above this 32 bit number. Since 0x48 = 72 bytes that's enough room for 18 four byte values. The difference between 32 bit and 64 bit dlls is enough for only 10 expansions, and this means there must be padding slop. If an 8 byte value comes after a 4 byte value we will get an additional 4 bytes of slop. Also the first 4 bytes are an identifier for a VST plugin ("PtsV").
+This is a technique I like to use when comparing structs on machines/code of different bit widths. Padding can make knowing when a value expands to fit the underline machine word more difficult because padding makes other values to appear as they have expanded as well. So if you are able to determine the length of a struct or length of a section. You can use it help zero in on how many elements expand. However, I have noticed that it's less effective for longer structs.
 
-Assuming no 16 bit or single byte values we can get an equation to estimate how many numbers I would expect to go from 4 to 8 bytes. We can get equation like this from that info `8 * X + 4 * Y + 4 * Z = 112`. Where X is the number values that expand from 4 to 8 bytes. Y is the number of times padding is needed. Z is the number 4 byte entries. We know X can't exceed 10, and Y can only be less than or equal to X. And the total value must equal 112. However we can eliminate a variable since for 32 bit we know `4 * X + 0 * Y + 4 * Z = 72`. This gives us two new equations `Y = 10 - X`, and `Z = 18 - X`. Also because the constraint on Y we know X must be greater than 4. This means there is only 5 to 10 values which expanded. These 5 to 10 values are probably pointers.
+So we know the position of `val32_one` for both 32 and 64 bit plugins. Now I take `0x70` minus `0x48` I get 40 bytes. This gives me some other useful information. This number is divisible by 4 which makes me think it's the result of some struct members going from 4 to 8 bytes wide. The difference is the same between any 64 bit or 32 bit plugin I have tried. The 40 bytes in size is enough for 10 values assuming perfect packing. This behavior makes me think the struct has a fair amount of pointers preceding `val32_one`. Since 0x48 = 72 bytes that's enough room for 18 four byte values in a 32 bit plugin.
+
+Assuming no 16 bit or single byte values we can get an equation to estimate how many numbers expanded. This is a reasonable assumption because the smaller values would either keep the same padding or pad the same way as a 4 byte value. Lets start with the equation `8 * X + 4 * Y + 4 * Z = 112`. Where X is the number values that expand from 4 to 8 bytes. Y is the number of times padding is needed. Z is the number 4 byte entries. We know X can't exceed 10, and Y can only be less than or equal to X. The total length must equal 112. However we can get a simpler set of equations that both depend on X. Plugins that are 32 have no padding so we can use the following: `4 * X + 0 * Y + 4 * Z = 72`. This gives us two new equations `Y = 10 - X`, and `Z = 18 - X`. Also because the constraint on Y we know X must be greater than 4. This means there is only 5 to 10 values which expanded. These 5 to 10 values are probably pointers. Sadly, less narrow than I would have liked, but if we get enough Z values, or find more instances of padding we can limit the range further.
 
 ## Function Pointers
 
@@ -87,11 +89,11 @@ Fortunately, it seems that the struct is bzero-ed or memset-ed to zero in a fair
 
 ## Struct Initialization
 
-However, despite what we can infer from size changes the initialization gives the most information about the struct's layout. It can help us not just how many 4 vs 8 byte elements are in the struct but order which we have figured out a fair amount so far, but this helps pin down a lot. Also it seems like the majority of the pointers are functions.
+However, despite what we can infer from size changes the initialization gives the most information about the struct's layout. It can help us know more than how many 4 vs 8 byte elements are in the struct but order which I have figured out a fair amount so far, but this helps pin down a lot. Also it seems like the majority of the pointers are functions.
 
 ![Struct Initialization](./images/struct-init.png)
 
-So pointer in the 64 bit dll starts ahead our struct so "PtsV" starts at offset 0x30. So lets take offset and width in assembly and order them by the offsets in a table with this table can use it to help find padding, and infer any missing values. Combined with the how the offsets follow a nice 4 byte spacing in 32 bit dlls this makes my job easier.
+So the pointer in the 64 bit dll starts ahead our struct so "PtsV" starts at offset 0x30. So let's take thw offset and width in assembly and sort by the offsets in a table. This table can use it to help find padding, and infer any missing values in any gaps. Combined with the fact the offsets follow a nice 4 byte spacing in 32 bit dlls this makes my job easier.
 
 | Offset | Width |  Type  | Comment   |
 | ------ | ----- | ------ | --------- |
@@ -115,17 +117,17 @@ So pointer in the 64 bit dll starts ahead our struct so "PtsV" starts at offset 
 
 Firstly, it's obvious there is padding between *0x30-0x38*. Offsets *0x8C-0x90* might appear to have padding between them at first glance. However, we can see that from the 32 bit assembly also skip 4 bytes. This is indicative of an other 4 byte field in the struct. We have an 8 byte gap between the struct* and `val32_one`. When looking at the 32 bit offsets in the assembly above it's only 4 bytes. So it's probably a pointer left NULL on initialization.
 
-The most annoying gap would be between *0x64-0x8C*. This gap is 36 bytes large on 64 bit DLLs, and only 24 bytes on 32 bit DLLs. This is a 12 byte difference which can mean only two things. First there are 3 values that expand with no padding/slop or 2 values that expand and one group of padding bytes. Even the equations derived above are not a help as Y = 1, and Y = 2 are both allowed with the information I have thus far. However, it looks 0x68 is set outside the initialization procedure I found, and is checked by LMMS when loading something it calls an editor from the near by strings. It's a dword so a 4 byte value. However, the next space after it would be at 0x6c and this is not 8 byte aligned so it must either be padding or an other 4 byte value
+The most annoying gap would be between *0x64-0x8C*. This gap is 36 bytes large on 64 bit DLLs, and only 24 bytes on 32 bit DLLs. This is a 12 byte difference which can mean only two things. First there are 3 values that expand with no padding/slop or second, two values that expand with one group of padding bytes. Even the equations derived above are not a help as Y = 1, and Y = 2 are both allowed with the information I have thus far. However, it looks 0x68 is set outside the initialization procedure I found, and is checked by LMMS when loading something it calls an editor from the near by strings. It's a dword so a 4 byte value. However, the next space after it would be at 0x6c and this is not 8 byte aligned so it must either be padding or an other 4 byte value
 
 ![Offset 0x68](./images/offset-0x68.png)
 
 ### Finally!
 
-So while trying to figure out that sizes in the gap, I finally found a plugin (*DynamicAudioNormalizer*) that sets an other value in that range. I guess that is the advantage with a widely used interface a lot more corner cases will be used. The value at 0x80 appears to be a 4 byte value (0x000A6e1e), and is used both in 32 and 64 bit. What is more important though is the area I circled in blue stays the same between both 64 bit and 32 bit. First, this tells me there are only 2 values that probably are pointers in this gap. Secondly, It tells me that there are two more 4-byte values before the float. It also means that area circled in pink for 64 bit plugins is padding, and not a value.
+So while trying to figure out layout & sizes in that gap, I finally found a plugin (*DynamicAudioNormalizer*) that sets an other value in that range. I guess that is the advantage with a widely used interface a lot more corner cases will be used. The value at 0x80 appears to be a 4 byte value (0x000A6e1e), and is used both in 32 and 64 bit. What is more important though is the area I circled in blue stays the same between both 64 bit and 32 bit. First, this tells me there are only 2 values that probably are pointers in this gap. Secondly, It tells me that there are two more 4-byte values before the float. It also means that area circled in pink for 64 bit plugins is padding, and not a value.
 
 ![break through](./images/break-through.png)
 
-### The Reaming Bytes
+### The Remaining Bytes
 
 So when you have a 64 bit plugin the struct is 192 bytes long. I have been able to figure out layout of a 136 bytes. This leaves 56 bytes that I can't seem to find used by anything. When it comes to 32 bit plugins they are 144 bytes long, I have figured out 88 bytes. This also leaves 56 bytes. So it seems to be a safe bet these trailing bytes do not change in size.
 
