@@ -1,8 +1,14 @@
+# Sections
+[Getting Started (Part 1) - *here*](./reversing-1.md)
+
+[Reversing Functions (Part 2)](./reversing-2.md)
+
+
 # Overview
 So looking for info on the VST 2. It looks like it's non-longer maintained by the original creator, and they are pushing VST 3. VST 2 SDK also seems to have some odd/restrictive licensing from a quick search about it. Also sounds like the creator is no longer licensing the SDK. Just going to avoid this all together. So I am gonna try to figure out the structure for VST 2 and write a C and Rust interface for them. While I am aware there probably some open source projects I could check like LMMS. However, I also want to put my reverse engineering skills to work. So gonna do this completely blind. At least when I think I am done or completely stymied I can see what I missed by looking at such projects.
 
 # Findings and Process
-The below will be me documenting what I have figured out in the order I discover things and how.
+This series of documents will documenting what I have discovered an how regarding reversing the VST 2.x interface. The main tools I will be using are snowman, and x64dbg. Snowman is a de-compiler, I find it easier to notice things at quick glance with it. x64 dbg is a debugger similar to ida pro, but open source. If I use something else I will mention it and why.
 
 ## Functions
 The first order bushiness is to see what functions DLLs export. All DLLS I have tried seem to export 2 functions *main*, and *VSTPluginMain*. The fact it so few may mean these functions probably have pretty complicated parameters considering how varied VSTs are. I have also noticed *main* and *VSTPluginMain* most the time seem to have the same offset. This means they should have the same function signature. When I see something like this it is generally done for compatibility reasons because a name change. Luckily this make choosing a starting point easy there is only one starting point.
@@ -12,7 +18,7 @@ The first order bushiness is to see what functions DLLs export. All DLLS I have 
 ## Function Signatures
 So let's try figure out the signature of our DLLs only exported function. I am going to use snow many here to hopefully speed this up. So looking at the assembly and de-compiled code of 64 bit and 32 bit dlls the return values differ in width. On windows a plain int is 32 bits. So it's not returning an int on 64 bit. It's either a large number or a pointer. I am going to probably guess returning a pointer, as there are only a few types that expand between 32 bit and 64 bit mainly pointers, or size_t.
 
-Snowman definitely seems to not be noticing things correctly. The 64 bit dlls so far I have looked at only take a single pointer as an argument. However 32 bit are showing differnt numbers of arguments when looking at de-compiled code from snowman. Different argument numbers would not make sense for a dll entry point. So I need to look more closely at the assembly, and the call stack.
+Snowman definitely seems to not be noticing things correctly. The 64 bit dlls so far I have looked at only take a single pointer as an argument. However 32 bit are showing different numbers of arguments when looking at de-compiled code from snowman. Different argument numbers would not make sense for a dll entry point. So I need to look more closely at the assembly, and the call stack.
 
 ![VST 2 Main](./images/funcs2.png)
 
