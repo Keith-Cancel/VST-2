@@ -5,7 +5,7 @@
 
 
 # Overview
-So looking for info on the VST 2. It looks like it's non-longer maintained by the original creator, and they are pushing VST 3. VST 2 SDK also seems to have some odd/restrictive licensing from a quick search about it. Also sounds like the creator is no longer licensing the SDK. Just going to avoid this all together. So I am gonna try to figure out the structure for VST 2 and write a C and Rust interface for them. While I am aware there probably some open source projects I could check like LMMS. However, I also want to put my reverse engineering skills to work. So gonna do this completely blind. At least when I think I am done or completely stymied I can see what I missed by looking at such projects.
+So looking for info on the VST 2. It looks like it's non-longer maintained by the original creator, and they are pushing VST 3. VST 2 SDK also seems to have some odd/restrictive licensing from a quick search about it. Also sounds like the creator is no longer licensing the SDK for version 2. I am just going to avoid this all together. So I am gonna try to figure out the structure for VST 2 interface and write a C and Rust interface for them. While I am aware there probably some open source projects I could check like LMMS to accelerate this. However, I also want to put my reverse engineering skills to work. So gonna do this completely blind. At least when I think I am done I can see what I missed by looking at such projects.
 
 # Findings and Process
 This series of documents will documenting what I have discovered an how regarding reversing the VST 2.x interface. The main tools I will be using are snowman, and x64dbg. Snowman is a de-compiler, I find it easier to notice things at quick glance with it. x64 dbg is a debugger similar to ida pro, but open source. If I use something else I will mention it and why.
@@ -16,7 +16,7 @@ The first order bushiness is to see what functions DLLs export. All DLLS I have 
 ![VST 2 Functions](./images/funcs.png)
 
 ## Function Signatures
-So let's try figure out the signature of our DLLs only exported function. I am going to use snow many here to hopefully speed this up. So looking at the assembly and de-compiled code of 64 bit and 32 bit dlls the return values differ in width. On windows a plain int is 32 bits. So it's not returning an int on 64 bit. It's either a large number or a pointer. I am going to probably guess returning a pointer, as there are only a few types that expand between 32 bit and 64 bit mainly pointers, or size_t.
+So let's try figure out the signature of our DLLs only exported function. I am going to use snowman here to hopefully speed this up. So looking at the assembly and de-compiled code of 64 bit and 32 bit dlls the return values differ in width. On windows a plain int is 32 bits. So it's not returning an int on 64 bit. It's either a large number or a pointer. I am going to probably guess returning a pointer, as there are only a few types that expand between 32 bit and 64 bit mainly pointers, or size_t.
 
 Snowman definitely seems to not be noticing things correctly. The 64 bit dlls so far I have looked at only take a single pointer as an argument. However 32 bit are showing different numbers of arguments when looking at de-compiled code from snowman. Different argument numbers would not make sense for a dll entry point. So I need to look more closely at the assembly, and the call stack.
 
@@ -26,7 +26,7 @@ Thankfully, when I look more closely it should be only one argument. I have also
 
 ![Snowman Fail](./images/funcs3.png)
 
-So I can conclude that VST entry point function takes one argument, which is a call back that takes 6 six arguments. You can see the code in the 32 bit dll calls it with 6 args. Also when double checking in the 64 bit it also is using 6 args. As to what this call back does I am currently wondering if something like wglGetProcAddress() from the openGL world. The function wglGetProcAddress() makes it easy to get new call backs, and I have seen variations of for plugins so they can get newer functionality from host applications, but still be backward compatible. Not unusual design choice for systems that can add new function calls. However just a tentative guess at this moment, and could be completely different.
+So I can conclude that VST entry point function takes one argument, which is a call back that takes 6 six arguments. You can see the code in the 32 bit dll calls it with 6 args. Also when double checking in the 64 bit it also is using 6 args. As to what this call back does I am currently wondering if something like wglGetProcAddress() from the openGL world. The function wglGetProcAddress() makes it easy to get new call backs, and I have seen variations of that style for many types of plugins so they can get newer functionality from host applications, but still be backward compatible. Not unusual design choice for systems that can add new function calls. However just a tentative guess at this moment, and could be completely different.
 
 Well after a little more static analysis, it looks like the entry point returns a pointer, to what I think is a struct or array of some kind. However, still have not really been able to determine what the fields are to this struct. Probably going to need to load plugins and see how the application and plugin interact.
 
@@ -40,7 +40,7 @@ Well doing that seems to lockup LMMS, and the *RemoteVstPlugin* executable will 
 
 So the returned pointer is in the data segment of this dll. Moreover, I thought it was a struct when looking around with snowman. However, it looks to be just the string "PtsV". The value seems be the same in other dlls. Maybe *VSTPluginMain* does not return anything that interesting, unless there is data after "PtsV" used by the calling process. If it's just a string I am I probably done here.
 
-![just a string?](./images/string.png)
+![just a string? (Nope)](./images/string.png)
 
 So the host process does multiple things with the returned pointer. It checks that DLL does not return *NULL*. Then it checks to see if the pointer points to a value equal to "PtsV". If it does not equal "PtsV" it does not consider the DLL a VST plugin. This value seems to be used so one can identify a VST plugin. However, the pointer is accessed with additional offsets when looking at the assembly code ahead. So clearly it's some kinda of structure that begins with a string?
 
